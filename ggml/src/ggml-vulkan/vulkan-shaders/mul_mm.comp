@@ -314,7 +314,7 @@ void main() {
     }
 #else
     ACC_TYPE_VEC2 sums[WMITER * TM * WNITER * TN/2];
-    FLOAT_TYPE_VEC2 cache_a[WMITER * TM];
+    FLOAT_TYPE_VEC4 cache_a[WMITER * TM / 2];
     FLOAT_TYPE_VEC2 cache_b;
 
     [[unroll]] for (uint i = 0; i < WMITER*TM*WNITER*TN/2; i++) {
@@ -356,8 +356,9 @@ void main() {
         [[unroll]] for (uint i = 0; i < BK / 2; i++) {
             // Load from shared into cache
             [[unroll]] for (uint wsir = 0; wsir < WMITER; wsir++) {
-                [[unroll]] for (uint j = 0; j < TM; j++) {
-                    cache_a[wsir * TM + j] = buf_a[(warp_r * WM + wsir * WSUBM + tiwr * TM + j) * SHMEM_STRIDE + i];
+                [[unroll]] for (uint j = 0; j < TM / 2; j++) {
+                    cache_a[wsir * TM / 2 + j].xy = buf_a[(warp_r * WM + wsir * WSUBM + tiwr * TM + 2 * j    ) * SHMEM_STRIDE + i];
+                    cache_a[wsir * TM / 2 + j].zw = buf_a[(warp_r * WM + wsir * WSUBM + tiwr * TM + 2 * j + 1) * SHMEM_STRIDE + i];
                 }
             }
 
@@ -369,8 +370,8 @@ void main() {
                         [[unroll]] for (uint cr = 0; cr < TM / 2; cr++) {
                             // [WNITER][TN][WMITER][TM / 2] -> [wsic][cc][wsir][cr]
                             const uint sums_idx = (wsic * TN + cc) * WMITER * (TM / 2) + wsir * (TM / 2) + cr;
-                            sums[sums_idx].x = fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ].x), ACC_TYPE(cache_b.x), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ].y), ACC_TYPE(cache_b.y), sums[sums_idx].x));
-                            sums[sums_idx].y = fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1].x), ACC_TYPE(cache_b.x), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1].y), ACC_TYPE(cache_b.y), sums[sums_idx].y));
+                            sums[sums_idx].x = fma(ACC_TYPE(cache_a[wsir * TM / 2 + cr].x), ACC_TYPE(cache_b.x), fma(ACC_TYPE(cache_a[wsir * TM / 2 + cr].y), ACC_TYPE(cache_b.y), sums[sums_idx].x));
+                            sums[sums_idx].y = fma(ACC_TYPE(cache_a[wsir * TM / 2 + cr].z), ACC_TYPE(cache_b.x), fma(ACC_TYPE(cache_a[wsir * TM / 2 + cr].w), ACC_TYPE(cache_b.y), sums[sums_idx].y));
                         }
                     }
                 }
