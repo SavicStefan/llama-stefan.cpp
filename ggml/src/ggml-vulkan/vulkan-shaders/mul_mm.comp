@@ -39,12 +39,12 @@
 
 // Load 2 values at once without affecting index calculations through LOAD_VEC
 #if (defined(DATA_A_F32) || defined(DATA_A_F16) || defined(DATA_A_BF16)) && !defined(ALIGNED)
-#define LOAD_VEC_BATCH_A 2
+#define LOAD_VEC_BATCH_A 4
 #else
 #define LOAD_VEC_BATCH_A 1
 #endif
 #if !defined(ALIGNED)
-#define LOAD_VEC_BATCH_B 2
+#define LOAD_VEC_BATCH_B 4
 #else
 #define LOAD_VEC_BATCH_B 1
 #endif
@@ -110,13 +110,15 @@ layout (constant_id = 9) const uint TK = 1;  // Only needed for coopmat
 layout (constant_id = 10) const uint WARP = 32;
 
 #ifdef COOPMAT
-#define SHMEM_STRIDE (BK / 2 + 4)
+#define SHMEM_STRIDE   (BK / 2 + 4)
+#define SHMEM_STRIDE_B (BK / 4 + 2)
 #else
 #define SHMEM_STRIDE (BK / 2 + 1)
+#define SHMEM_STRIDE_B (BK / 2 + 1)
 #endif
 
 shared FLOAT_TYPE_VEC2 buf_a[BM * SHMEM_STRIDE];
-shared FLOAT_TYPE_VEC2 buf_b[BN * SHMEM_STRIDE];
+shared FLOAT_TYPE_VEC4 buf_b[BN * SHMEM_STRIDE_B];
 
 #define NUM_WARPS (BLOCK_SIZE / WARP)
 
@@ -315,7 +317,7 @@ void main() {
 #else
     ACC_TYPE_VEC2 sums[WMITER * TM * WNITER * TN/2];
     FLOAT_TYPE_VEC2 cache_a[WMITER * TM];
-    FLOAT_TYPE_VEC2 cache_b;
+    FLOAT_TYPE_VEC4 cache_b;
 
     [[unroll]] for (uint i = 0; i < WMITER*TM*WNITER*TN/2; i++) {
         sums[i] = ACC_TYPE_VEC2(0.0f, 0.0f);
@@ -346,7 +348,7 @@ void main() {
                 coopMatLoad(cache_a, buf_a, (warp_r * WM + cm_row * TM) * SHMEM_STRIDE + i / 2, SHMEM_STRIDE, gl_CooperativeMatrixLayoutRowMajor);
 
                 [[unroll]] for (uint cm_col = 0; cm_col < cms_per_col; cm_col++) {
-                    coopMatLoad(cache_b, buf_b, (warp_c * WN + cm_col * TN) * SHMEM_STRIDE + i / 2, SHMEM_STRIDE, gl_CooperativeMatrixLayoutColumnMajor);
+                    coopMatLoad(cache_b, buf_b, (warp_c * WN + cm_col * TN) * SHMEM_STRIDE_B + i / 4, SHMEM_STRIDE_B, gl_CooperativeMatrixLayoutColumnMajor);
 
                     sums[cm_col * cms_per_row + cm_row] = coopMatMulAdd(cache_a, cache_b, sums[cm_col * cms_per_row + cm_row]);
                 }
@@ -371,6 +373,19 @@ void main() {
                             const uint sums_idx = (wsic * TN + cc) * WMITER * (TM / 2) + wsir * (TM / 2) + cr;
                             sums[sums_idx].x = fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ].x), ACC_TYPE(cache_b.x), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ].y), ACC_TYPE(cache_b.y), sums[sums_idx].x));
                             sums[sums_idx].y = fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1].x), ACC_TYPE(cache_b.x), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1].y), ACC_TYPE(cache_b.y), sums[sums_idx].y));
+
+                        // #if BUF_VEC == 8
+                        //     sums[sums_idx].x = fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ][0].x), ACC_TYPE(cache_b[0].x), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ][0].y), ACC_TYPE(cache_b[0].y), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ][0].z), ACC_TYPE(cache_b[0].z), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ][0].w), ACC_TYPE(cache_b[0].w), sums[sums_idx].x))));
+                        //     sums[sums_idx].x = fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ][1].x), ACC_TYPE(cache_b[1].x), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ][1].y), ACC_TYPE(cache_b[1].y), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ][1].z), ACC_TYPE(cache_b[1].z), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ][1].w), ACC_TYPE(cache_b[1].w), sums[sums_idx].x))));
+                            
+                        //     sums[sums_idx].y = fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1][0].x), ACC_TYPE(cache_b[0].x), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1][0].y), ACC_TYPE(cache_b[0].y), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1][0].z), ACC_TYPE(cache_b[0].z), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1][0].w), ACC_TYPE(cache_b[0].w), sums[sums_idx].y))));
+                        //     sums[sums_idx].y = fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1][1].x), ACC_TYPE(cache_b[1].x), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1][1].y), ACC_TYPE(cache_b[1].y), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1][1].z), ACC_TYPE(cache_b[1].z), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1][1].w), ACC_TYPE(cache_b[1].w), sums[sums_idx].y))));
+                        // #elif BUF_VEC == 4
+                        //     sums[sums_idx].x = fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ].x), ACC_TYPE(cache_b.x), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ].y), ACC_TYPE(cache_b.y), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ].z), ACC_TYPE(cache_b.z), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ].w), ACC_TYPE(cache_b.w), sums[sums_idx].x))));
+                        //     sums[sums_idx].y = fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1].x), ACC_TYPE(cache_b.x), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1].y), ACC_TYPE(cache_b.y), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1].z), ACC_TYPE(cache_b.z), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1].w), ACC_TYPE(cache_b.w), sums[sums_idx].y))));
+                        // #else //BUF_VEC == 2
+                        // #endif
+
                         }
                     }
                 }
