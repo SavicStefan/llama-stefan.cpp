@@ -2466,12 +2466,12 @@ static void ggml_vk_load_shaders(vk_device& device) {
         s_align =  32;
     } else {
         // Matrix cores require different warp group sizes
-        const uint32_t tm_l = device->coopmat_support ? device->coopmat_m : 4;
-        const uint32_t tm_m = device->coopmat_support ? device->coopmat_m : 4;
-        const uint32_t tm_s = device->coopmat_support ? device->coopmat_m : 2;
-        const uint32_t tn_l = device->coopmat_support ? device->coopmat_n : 4;
-        const uint32_t tn_m = device->coopmat_support ? device->coopmat_n : 2;
-        const uint32_t tn_s = device->coopmat_support ? device->coopmat_n : 2;
+        const uint32_t tm_l = device->coopmat_support ? device->coopmat_m : 2;
+        const uint32_t tm_m = device->coopmat_support ? device->coopmat_m : 2;
+        const uint32_t tm_s = device->coopmat_support ? device->coopmat_m : 1;
+        const uint32_t tn_l = device->coopmat_support ? device->coopmat_n : 2;
+        const uint32_t tn_m = device->coopmat_support ? device->coopmat_n : 1;
+        const uint32_t tn_s = device->coopmat_support ? device->coopmat_n : 1;
         const uint32_t tk_l = device->coopmat_support ? device->coopmat_k : 1;
         const uint32_t tk_m = device->coopmat_support ? device->coopmat_k : 1;
         const uint32_t tk_s = device->coopmat_support ? device->coopmat_k : 1;
