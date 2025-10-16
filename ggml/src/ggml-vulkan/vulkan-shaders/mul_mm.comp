@@ -313,12 +313,12 @@ void main() {
         sums[i] = coopmat<ACC_TYPE, gl_ScopeSubgroup, TM, TN, gl_MatrixUseAccumulator>(0.0f);
     }
 #else
-    ACC_TYPE_VEC2 sums[WMITER * TM * WNITER * TN/2];
-    FLOAT_TYPE_VEC2 cache_a[WMITER * TM];
-    FLOAT_TYPE_VEC2 cache_b;
+    ACC_TYPE_VEC4 sums[WMITER * TM * WNITER * TN / 4];
+    FLOAT_TYPE_VEC4 cache_a[WMITER * TM];
+    FLOAT_TYPE_VEC4 cache_b;
 
-    [[unroll]] for (uint i = 0; i < WMITER*TM*WNITER*TN/2; i++) {
-        sums[i] = ACC_TYPE_VEC2(0.0f, 0.0f);
+    [[unroll]] for (uint i = 0; i < WMITER*TM*WNITER*TN / 4; i++) {
+        sums[i] = ACC_TYPE_VEC4(0.0f, 0.0f, 0.0f, 0.0f);
     }
 #endif
 
@@ -356,25 +356,47 @@ void main() {
         [[unroll]] for (uint i = 0; i < BK / 2; i++) {
             // Load from shared into cache
             [[unroll]] for (uint wsir = 0; wsir < WMITER; wsir++) {
-                [[unroll]] for (uint j = 0; j < TM; j++) {
-                    cache_a[wsir * TM + j] = buf_a[(warp_r * WM + wsir * WSUBM + tiwr * TM + j) * SHMEM_STRIDE + i];
+                [[unroll]] for (uint j = 0; j < TM / 2; j++) {
+                    cache_a[wsir * TM / 2 + j].xy = buf_a[(warp_r * WM + wsir * WSUBM + tiwr * TM + 2 * j    ) * SHMEM_STRIDE + i];
+                    cache_a[wsir * TM / 2 + j].zw = buf_a[(warp_r * WM + wsir * WSUBM + tiwr * TM + 2 * j + 1) * SHMEM_STRIDE + i];
                 }
             }
 
+            // [[unroll]] for (uint wsic = 0; wsic < WNITER; wsic++) {
+            //     [[unroll]] for (uint cc = 0; cc < TN; cc++) {
+            //         cache_b = buf_b[(warp_c * WN + wsic * WSUBN + tiwc * TN + cc) * SHMEM_STRIDE + i];
+
+            //         [[unroll]] for (uint wsir = 0; wsir < WMITER; wsir++) {
+            //             [[unroll]] for (uint cr = 0; cr < TM / 2; cr++) {
+            //                 // [WNITER][TN][WMITER][TM / 2] -> [wsic][cc][wsir][cr]
+            //                 const uint sums_idx = (wsic * (TN / 2) + cc) * WMITER * (TM / 2) + wsir * (TM / 2) + cr;
+            //                 sums[sums_idx].x = fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ].x), ACC_TYPE(cache_b.x), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ].y), ACC_TYPE(cache_b.y), sums[sums_idx].x));
+            //                 sums[sums_idx].y = fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1].x), ACC_TYPE(cache_b.x), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1].y), ACC_TYPE(cache_b.y), sums[sums_idx].y));
+            //             }
+            //         }
+            //     }
+            // }
+
             [[unroll]] for (uint wsic = 0; wsic < WNITER; wsic++) {
-                [[unroll]] for (uint cc = 0; cc < TN; cc++) {
-                    cache_b = buf_b[(warp_c * WN + wsic * WSUBN + tiwc * TN + cc) * SHMEM_STRIDE + i];
+                [[unroll]] for (uint cc = 0; cc < TN / 2; cc++) {
+                    cache_b.xy = buf_b[(warp_c * WN + wsic * WSUBN + tiwc * TN + 2 * cc    ) * SHMEM_STRIDE + i];
+                    cache_b.zw = buf_b[(warp_c * WN + wsic * WSUBN + tiwc * TN + 2 * cc + 1) * SHMEM_STRIDE + i];
 
                     [[unroll]] for (uint wsir = 0; wsir < WMITER; wsir++) {
                         [[unroll]] for (uint cr = 0; cr < TM / 2; cr++) {
                             // [WNITER][TN][WMITER][TM / 2] -> [wsic][cc][wsir][cr]
-                            const uint sums_idx = (wsic * TN + cc) * WMITER * (TM / 2) + wsir * (TM / 2) + cr;
-                            sums[sums_idx].x = fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ].x), ACC_TYPE(cache_b.x), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr    ].y), ACC_TYPE(cache_b.y), sums[sums_idx].x));
-                            sums[sums_idx].y = fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1].x), ACC_TYPE(cache_b.x), fma(ACC_TYPE(cache_a[wsir * TM + 2 * cr + 1].y), ACC_TYPE(cache_b.y), sums[sums_idx].y));
+                            const uint sums_idx = (wsic * (TN / 2) + cc) * WMITER * (TM / 2) + wsir * (TM / 2) + cr;
+                            sums[sums_idx].x = fma(ACC_TYPE(cache_a[wsir * TM / 2 + cr].x), ACC_TYPE(cache_b.x), fma(ACC_TYPE(cache_a[wsir * TM / 2 + cr].y), ACC_TYPE(cache_b.y), sums[sums_idx].x));
+                            sums[sums_idx].y = fma(ACC_TYPE(cache_a[wsir * TM / 2 + cr].z), ACC_TYPE(cache_b.x), fma(ACC_TYPE(cache_a[wsir * TM / 2 + cr].w), ACC_TYPE(cache_b.y), sums[sums_idx].y));
+
+                            sums[sums_idx].z = fma(ACC_TYPE(cache_a[wsir * TM / 2 + cr].x), ACC_TYPE(cache_b.z), fma(ACC_TYPE(cache_a[wsir * TM / 2 + cr].y), ACC_TYPE(cache_b.w), sums[sums_idx].z));
+                            sums[sums_idx].w = fma(ACC_TYPE(cache_a[wsir * TM / 2 + cr].z), ACC_TYPE(cache_b.z), fma(ACC_TYPE(cache_a[wsir * TM / 2 + cr].w), ACC_TYPE(cache_b.w), sums[sums_idx].w));
                         }
                     }
                 }
             }
+
+            
 
         }
 #endif
@@ -390,9 +412,11 @@ void main() {
         }
     }
 #else
-    [[unroll]] for (uint i = 0; i < WMITER*TM*WNITER*TN/2; i++) {
+    [[unroll]] for (uint i = 0; i < WMITER*TM*WNITER*TN / 4; i++) {
         sums[i].x = clamp(sums[i].x, -ACC_TYPE_MAX, ACC_TYPE_MAX);
         sums[i].y = clamp(sums[i].y, -ACC_TYPE_MAX, ACC_TYPE_MAX);
+        sums[i].z = clamp(sums[i].z, -ACC_TYPE_MAX, ACC_TYPE_MAX);
+        sums[i].w = clamp(sums[i].w, -ACC_TYPE_MAX, ACC_TYPE_MAX);
     }
 #endif
 #endif
@@ -459,7 +483,7 @@ void main() {
 
             const uint dr_warp = dr + wsir * WSUBM + tiwr * TM;
             const uint dc_warp = dc + wsic * WSUBN + tiwc * TN;
-            [[unroll]] for (uint cc = 0; cc < TN; cc++) {
+            [[unroll]] for (uint cc = 0; cc < TN / 2; cc++) {
 #ifdef MUL_MAT_ID
                 const uint row_i = dc_warp + cc;
                 if (row_i >= _ne1) break;
@@ -467,20 +491,26 @@ void main() {
                 const u16vec2 row_idx = row_ids[row_i - ic * BN];
 #endif // MUL_MAT_ID
                 [[unroll]] for (uint cr = 0; cr < TM / 2; cr++) {
-                    const uint sums_idx = (wsic * TN + cc) * WMITER * (TM / 2) + wsir * (TM / 2) + cr;
+                    const uint sums_idx = (wsic * (TN / 2) + cc) * WMITER * (TM / 2) + wsir * (TM / 2) + cr;
 #ifdef MUL_MAT_ID
-                    if (dr_warp + 2 * cr < p.M) {
-                        data_d[row_idx.y * p.batch_stride_d + row_idx.x * p.stride_d + dr_warp + 2 * cr] = D_TYPE(sums[sums_idx].x);
-                    }
-                    if (dr_warp + 2 * cr + 1 < p.M) {
-                        data_d[row_idx.y * p.batch_stride_d + row_idx.x * p.stride_d + dr_warp + 2 * cr + 1] = D_TYPE(sums[sums_idx].y);
-                    }
+                    // if (dr_warp + 2 * cr     < p.M) {
+                    //     data_d[row_idx.y * p.batch_stride_d + row_idx.x * p.stride_d + dr_warp + 2 * cr    ] = D_TYPE_VEC2(sums[sums_idx].xy);
+                    // }
+                    // if (dr_warp + 2 * cr + 1 < p.M) {
+                    //     data_d[row_idx.y * p.batch_stride_d + row_idx.x * p.stride_d + dr_warp + 2 * cr + 1] = D_TYPE_VEC2(sums[sums_idx].zw);
+                    // }
 #else
-                    if (dr_warp + 2 * cr < p.M && dc_warp + cc < p.N) {
-                        data_d[offsets + (dc_warp + cc) * p.stride_d + dr_warp + 2 * cr] = D_TYPE(sums[sums_idx].x);
+                    if (dr_warp + 2 * cr < p.M && dc_warp + 2 * cc < p.N) {
+                        data_d[offsets + (dc_warp + 2 * cc    ) * p.stride_d + dr_warp + 2 * cr    ] = D_TYPE(sums[sums_idx].x);
                     }
-                    if (dr_warp + 2 * cr + 1 < p.M && dc_warp + cc < p.N) {
-                        data_d[offsets + (dc_warp + cc) * p.stride_d + dr_warp + 2 * cr + 1] = D_TYPE(sums[sums_idx].y);
+                    if (dr_warp + 2 * cr + 1 < p.M && dc_warp + 2 * cc  < p.N) {
+                        data_d[offsets + (dc_warp + 2 * cc) * p.stride_d + dr_warp + 2 * cr + 1] = D_TYPE(sums[sums_idx].y);
+                    }
+                    if (dr_warp + 2 * cr < p.M && dc_warp + 2 * cc + 1 < p.N) {
+                        data_d[offsets + (dc_warp + 2 * cc + 1) * p.stride_d + dr_warp + 2 * cr] = D_TYPE(sums[sums_idx].z);
+                    }
+                    if (dr_warp + 2 * cr + 1 < p.M && dc_warp + 2 * cc + 1 < p.N) {
+                        data_d[offsets + (dc_warp + 2 * cc + 1) * p.stride_d + dr_warp + 2 * cr + 1] = D_TYPE(sums[sums_idx].w);
                     }
 #endif // MUL_MAT_ID
                 }
