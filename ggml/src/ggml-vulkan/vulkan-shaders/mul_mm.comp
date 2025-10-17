@@ -356,16 +356,26 @@ void main() {
         [[unroll]] for (uint i = 0; i < BK / 4; i++) {
             // Load from shared into cache
             [[unroll]] for (uint wsir = 0; wsir < WMITER; wsir++) {
+                const uint base_a = (warp_r * WM + wsir * WSUBM + tiwr * TM) * SHMEM_STRIDE + 2 * i;
                 [[unroll]] for (uint j = 0; j < TM; j++) {
-                    cache_a[wsir * TM + j].xy = buf_a[(warp_r * WM + wsir * WSUBM + tiwr * TM + j) * SHMEM_STRIDE + 2 * i   ];
-                    cache_a[wsir * TM + j].zw = buf_a[(warp_r * WM + wsir * WSUBM + tiwr * TM + j) * SHMEM_STRIDE + 2 * i + 1];
+                    cache_a[wsir * TM + j].xy = buf_a[base_a + j * SHMEM_STRIDE    ];
+                    cache_a[wsir * TM + j].zw = buf_a[base_a + j * SHMEM_STRIDE + 1];
                 }
+                // [[unroll]] for (uint j = 0; j < TM; j++) {
+                //     cache_a[wsir * TM + j].xy = buf_a[(warp_r * WM + wsir * WSUBM + tiwr * TM + j) * SHMEM_STRIDE + 2 * i    ];
+                //     cache_a[wsir * TM + j].zw = buf_a[(warp_r * WM + wsir * WSUBM + tiwr * TM + j) * SHMEM_STRIDE + 2 * i + 1];
+                // }
             }
 
             [[unroll]] for (uint wsic = 0; wsic < WNITER; wsic++) {
+                const uint base_b = (warp_c * WN + wsic * WSUBN + tiwc * TN) * SHMEM_STRIDE + 2 * i;
                 [[unroll]] for (uint cc = 0; cc < TN; cc++) {
-                    cache_b.xy = buf_b[(warp_c * WN + wsic * WSUBN + tiwc * TN + cc) * SHMEM_STRIDE + 2 * i    ];
-                    cache_b.zw = buf_b[(warp_c * WN + wsic * WSUBN + tiwc * TN + cc) * SHMEM_STRIDE + 2 * i + 1];
+                    cache_b.xy = buf_b[base_b + cc * SHMEM_STRIDE    ];
+                    cache_b.zw = buf_b[base_b + cc * SHMEM_STRIDE + 1];
+
+                // [[unroll]] for (uint cc = 0; cc < TN; cc++) {
+                //     cache_b.xy = buf_b[(warp_c * WN + wsic * WSUBN + tiwc * TN + cc) * SHMEM_STRIDE + 2 * i    ];
+                //     cache_b.zw = buf_b[(warp_c * WN + wsic * WSUBN + tiwc * TN + cc) * SHMEM_STRIDE + 2 * i + 1];
 
                     [[unroll]] for (uint wsir = 0; wsir < WMITER; wsir++) {
                         [[unroll]] for (uint cr = 0; cr < TM / 2; cr++) {
