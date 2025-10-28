@@ -62,21 +62,25 @@ void block_a_to_registers(const uint reg_ib, const uint buf_ib) {
 void block_a_to_registers(const uint reg_ib, const uint buf_ib, const uint iqs) {
 }
 
-ACC_TYPE mmq_dot_product(const uint ib_a) {
-    int32_t q_sum = 0;
+ACC_TYPE_VEC2 mmq_dot_product(const uint ib_a) {
+    i32vec2 q_sum = i32vec2(0);
     [[unroll]] for (uint iqs = 0; iqs < 4; iqs++) {
-        const uint32_t vui = cache_a[ib_a].qs[iqs];
-        const i32vec2 qs_a = i32vec2( vui       & 0x0F0F0F0F,
-                                     (vui >> 4) & 0x0F0F0F0F);
+        const u32vec2 vui = u32vec2(cache_a[ib_a    ].qs[iqs],
+                                    cache_a[ib_a + 1].qs[iqs]);
+        const i32vec4 qs_a = i32vec4(vui.x & 0x0F0F0F0F, (vui.x >> 4) & 0x0F0F0F0F,
+                                     vui.y & 0x0F0F0F0F, (vui.y >> 4) & 0x0F0F0F0F);
+        const i32vec2 qs_b = i32vec2(cache_b.qs[iqs],
+                                     cache_b.qs[iqs + 4]);
 
-        const int32_t qs_b0 = cache_b.qs[iqs];
-        const int32_t qs_b1 = cache_b.qs[iqs + 4];
+        q_sum.x += dotPacked4x8EXT(qs_a.x, qs_b.x);
+        q_sum.y += dotPacked4x8EXT(qs_a.z, qs_b.x);
+        q_sum.x += dotPacked4x8EXT(qs_a.y, qs_b.y);
+        q_sum.y += dotPacked4x8EXT(qs_a.w, qs_b.y);
 
-        q_sum += dotPacked4x8EXT(qs_a.x, qs_b0);
-        q_sum += dotPacked4x8EXT(qs_a.y, qs_b1);
     }
 
-    return mul_q8_1(q_sum, cache_a[ib_a].dm, cache_b.ds, 1);
+    return ACC_TYPE_VEC2(mul_q8_1(q_sum.x, cache_a[ib_a    ].dm, cache_b.ds, 1),
+                         mul_q8_1(q_sum.y, cache_a[ib_a + 1].dm, cache_b.ds, 1));
 }
 #endif // MMQ_SHMEM
 
@@ -140,24 +144,35 @@ void block_a_to_registers(const uint reg_ib, const uint buf_ib) {
     }
 }
 
-ACC_TYPE mmq_dot_product(const uint ib_a) {
-    int32_t q_sum = 0;
+ACC_TYPE_VEC2 mmq_dot_product(const uint ib_a) {
+    i32vec2 q_sum = i32vec2(0);
     [[unroll]] for (uint iqs = 0; iqs < 4; iqs++) {
-        const uint32_t vui = cache_a[ib_a].qs[iqs];
-        const int32_t qh = int32_t(cache_a[ib_a].qh >> (4 * iqs));
-        const int32_t qs_a0 = int32_t(vui & 0x0F0F0F0F)
-                         | ((qh & 0xF) * 0x02040810) & 0x10101010; // (0,1,2,3) -> (4,12,20,28)
-        const int32_t qs_a1 = int32_t((vui >> 4) & 0x0F0F0F0F)
-                         | (((qh >> 16) & 0xF) * 0x02040810) & 0x10101010; // (16,17,18,19) -> (4,12,20,28)
+        const i32vec2 qs_b = i32vec2(cache_b.qs[iqs    ],
+                                     cache_b.qs[iqs + 4]);
 
-        const int32_t qs_b0 = cache_b.qs[iqs];
-        const int32_t qs_b1 = cache_b.qs[iqs + 4];
+        const u32vec2 vui = u32vec2(cache_a[ib_a    ].qs[iqs],
+                                    cache_a[ib_a + 1].qs[iqs]);
 
-        q_sum += dotPacked4x8EXT(qs_a0, qs_b0);
-        q_sum += dotPacked4x8EXT(qs_a1, qs_b1);
+        const int32_t qh_0 = int32_t(cache_a[ib_a    ].qh >> (4 * iqs));
+        const int32_t qh_1 = int32_t(cache_a[ib_a + 1].qh >> (4 * iqs));
+
+        const i32vec2 qs_a0 = i32vec2(int32_t(vui.x & 0x0F0F0F0F) | ((qh_0 & 0xF) * 0x02040810) & 0x10101010, // (0,1,2,3) -> (4,12,20,28)
+                                      int32_t((vui.x >> 4) & 0x0F0F0F0F) | (((qh_0 >> 16) & 0xF) * 0x02040810) & 0x10101010); // (16,17,18,19) -> (4,12,20,28)
+
+
+        const i32vec2 qs_a1 = i32vec2(int32_t(vui.y & 0x0F0F0F0F) | ((qh_1 & 0xF) * 0x02040810) & 0x10101010,
+                                      int32_t((vui.y >> 4) & 0x0F0F0F0F) | (((qh_1 >> 16) & 0xF) * 0x02040810) & 0x10101010);
+
+        q_sum.x += dotPacked4x8EXT(qs_a0.x, qs_b.x);
+        q_sum.y += dotPacked4x8EXT(qs_a1.x, qs_b.x);
+
+        q_sum.x += dotPacked4x8EXT(qs_a0.y, qs_b.y);
+        q_sum.y += dotPacked4x8EXT(qs_a1.y, qs_b.y);
+
     }
 
-    return mul_q8_1(q_sum, cache_a[ib_a].dm, cache_b.ds, 1);
+    return ACC_TYPE_VEC2(mul_q8_1(q_sum.x, cache_a[ib_a    ].dm, cache_b.ds, 1),
+                         mul_q8_1(q_sum.y, cache_a[ib_a + 1].dm, cache_b.ds, 1));
 }
 #endif // MMQ_SHMEM
 #endif
@@ -191,16 +206,16 @@ void block_a_to_registers(const uint reg_ib, const uint buf_ib) {
     }
 }
 
-ACC_TYPE mmq_dot_product(const uint ib_a) {
-    int32_t q_sum = 0;
+ACC_TYPE_VEC2 mmq_dot_product(const uint ib_a) {
+    i32vec2 q_sum = i32vec2(0);
     [[unroll]] for (uint iqs = 0; iqs < 8; iqs++) {
-        const int32_t qs_a = cache_a[ib_a].qs[iqs];
         const int32_t qs_b = cache_b.qs[iqs];
-
-        q_sum += dotPacked4x8EXT(qs_a, qs_b);
+        q_sum.x += dotPacked4x8EXT(cache_a[ib_a    ].qs[iqs], qs_b);
+        q_sum.y += dotPacked4x8EXT(cache_a[ib_a + 1].qs[iqs], qs_b);
     }
 
-    return mul_q8_1(q_sum, cache_a[ib_a].dm, cache_b.ds, 1);
+    return ACC_TYPE_VEC2(mul_q8_1(q_sum.x, cache_a[ib_a    ].dm, cache_b.ds, 1),
+                         mul_q8_1(q_sum.y, cache_a[ib_a + 1].dm, cache_b.ds, 1));
 }
 #endif // MMQ_SHMEM
 #endif
@@ -261,21 +276,34 @@ void block_a_to_registers(const uint reg_ib, const uint buf_ib) {
     }
 }
 
-ACC_TYPE mmq_dot_product(const uint ib_a) {
-    int32_t sum_d = 0;
-    int32_t sum_m = 0;
+ACC_TYPE_VEC2 mmq_dot_product(const uint ib_a) {
+    i32vec2 sum_d = i32vec2(0);
+    i32vec2 sum_m = i32vec2(0);
 
     [[unroll]] for (uint iqs = 0; iqs < 8; iqs++) {
-        const uint8_t scale = cache_a[ib_a].scales[iqs / 4];
-        const int32_t scale_m = int32_t(scale >> 4) * 0x01010101; // Duplicate 8-bit value across 32-bits.
-        const int32_t qs_a = int32_t((cache_a[ib_a].qs[iqs / 4] >> ((iqs % 4) * 2)) & 0x03030303);
+        const u8vec2 scale = u8vec2(cache_a[ib_a    ].scales[iqs / 4],
+                                    cache_a[ib_a + 1].scales[iqs / 4]);
 
-        sum_d += dotPacked4x8EXT(qs_a, cache_b.qs[iqs]) * (scale & 0xF);
-        sum_m += dotPacked4x8EXT(scale_m, cache_b.qs[iqs]);
+        const i32vec2 scale_m = i32vec2(int32_t(scale.x >> 4) * 0x01010101,
+                                        int32_t(scale.y >> 4) * 0x01010101); // Duplicate 8-bit value across 32-bits.
+
+        const i32vec2 qs_a = i32vec2((cache_a[ib_a    ].qs[iqs / 4] >> ((iqs % 4) * 2)) & 0x03030303,
+                                     (cache_a[ib_a + 1].qs[iqs / 4] >> ((iqs % 4) * 2)) & 0x03030303);
+
+        const int32_t qs_b = cache_b.qs[iqs];
+        sum_d.x += dotPacked4x8EXT(qs_a.x, qs_b) * (scale.x & 0xF);
+        sum_d.y += dotPacked4x8EXT(qs_a.y, qs_b) * (scale.y & 0xF);
+
+        sum_m.x += dotPacked4x8EXT(scale_m.x, qs_b);
+        sum_m.y += dotPacked4x8EXT(scale_m.y, qs_b);
+
     }
 
-    return mul_q8_1(sum_d, sum_m, cache_a[ib_a].dm, cache_b.ds, 1);
+    return ACC_TYPE_VEC2(mul_q8_1(sum_d.x, sum_m.x, cache_a[ib_a    ].dm, cache_b.ds, 1),
+                         mul_q8_1(sum_d.y, sum_m.y, cache_a[ib_a + 1].dm, cache_b.ds, 1));
+
 }
+
 #endif // MMQ_SHMEM
 #endif
 
@@ -321,27 +349,34 @@ void block_a_to_registers(const uint reg_ib, const uint buf_ib) {
     }
 }
 
-ACC_TYPE mmq_dot_product(const uint ib_a) {
-    float result = 0.0;
-    int32_t q_sum = 0;
+ACC_TYPE_VEC2 mmq_dot_product(const uint ib_a) {
+    vec2 result = vec2(0.0);
+    i32vec2 q_sum = i32vec2(0);
 
     [[unroll]] for (uint iqs = 0; iqs < 4; iqs++) {
         // Subtract 4 from the quants to correct the 3rd bit offset
-        const int32_t qs_a = pack32(unpack8(int32_t((cache_a[ib_a].qs[iqs / 2] >> ((iqs % 2) * 4)) & 0x0F0F0F0F)) - int8_t(4));
+        const i32vec2 qs_a = i32vec2(pack32(unpack8(int32_t((cache_a[ib_a    ].qs[iqs / 2] >> ((iqs % 2) * 4)) & 0x0F0F0F0F)) - int8_t(4)),
+                                     pack32(unpack8(int32_t((cache_a[ib_a + 1].qs[iqs / 2] >> ((iqs % 2) * 4)) & 0x0F0F0F0F)) - int8_t(4)));
 
-        q_sum += dotPacked4x8EXT(qs_a, cache_b.qs[iqs]);
+        q_sum.x += dotPacked4x8EXT(qs_a.x, cache_b.qs[iqs]);
+        q_sum.y += dotPacked4x8EXT(qs_a.y, cache_b.qs[iqs]);
     }
-    result += float(cache_a[ib_a].d_scales[0]) * float(q_sum);
-    q_sum = 0;
+    result.x += float(cache_a[ib_a    ].d_scales[0]) * float(q_sum.x);
+    result.y += float(cache_a[ib_a + 1].d_scales[0]) * float(q_sum.y);
+    q_sum = i32vec2(0);
 
     [[unroll]] for (uint iqs = 4; iqs < 8; iqs++) {
-        const int32_t qs_a = pack32(unpack8(int32_t((cache_a[ib_a].qs[iqs / 2] >> ((iqs % 2) * 4)) & 0x0F0F0F0F)) - int8_t(4));
+        const i32vec2 qs_a = i32vec2(pack32(unpack8(int32_t((cache_a[ib_a    ].qs[iqs / 2] >> ((iqs % 2) * 4)) & 0x0F0F0F0F)) - int8_t(4)),
+                                     pack32(unpack8(int32_t((cache_a[ib_a + 1].qs[iqs / 2] >> ((iqs % 2) * 4)) & 0x0F0F0F0F)) - int8_t(4)));
 
-        q_sum += dotPacked4x8EXT(qs_a, cache_b.qs[iqs]);
+        q_sum.x += dotPacked4x8EXT(qs_a.x, cache_b.qs[iqs]);
+        q_sum.y += dotPacked4x8EXT(qs_a.y, cache_b.qs[iqs]);
     }
-    result += float(cache_a[ib_a].d_scales[1]) * float(q_sum);
+    result.x += float(cache_a[ib_a    ].d_scales[1]) * float(q_sum.x);
+    result.y += float(cache_a[ib_a + 1].d_scales[1]) * float(q_sum.y);
 
-    return ACC_TYPE(cache_b.ds.x * result);
+    return ACC_TYPE_VEC2(cache_b.ds.x * result.x,
+                         cache_b.ds.x * result.y);
 }
 #endif // MMQ_SHMEM
 #endif
@@ -398,20 +433,24 @@ void block_a_to_registers(const uint reg_ib, const uint buf_ib) {
     }
 }
 
-ACC_TYPE mmq_dot_product(const uint ib_a) {
-    int32_t q_sum = 0;
+ACC_TYPE_VEC2 mmq_dot_product(const uint ib_a) {
+    i32vec2 q_sum = i32vec2(0);
 
     [[unroll]] for (uint iqs = 0; iqs < 8; iqs++) {
 #if defined(DATA_A_Q4_K)
-        const int32_t qs_a = int32_t((cache_a[ib_a].qs[iqs / 2] >> ((iqs % 2) * 4)) & 0x0F0F0F0F);
+        const i32vec2 qs_a = i32vec2((cache_a[ib_a    ].qs[iqs / 2] >> ((iqs % 2) * 4)) & 0x0F0F0F0F,
+                                     (cache_a[ib_a + 1].qs[iqs / 2] >> ((iqs % 2) * 4)) & 0x0F0F0F0F);
 #else // defined(DATA_A_Q5_K)
-        const int32_t qs_a = cache_a[ib_a].qs[iqs];
+        const i32vec2 qs_a = i32vec2(cache_a[ib_a    ].qs[iqs],
+                                     cache_a[ib_a + 1].qs[iqs]);
 #endif
 
-        q_sum += dotPacked4x8EXT(qs_a, cache_b.qs[iqs]);
+        q_sum.x += dotPacked4x8EXT(qs_a.x, cache_b.qs[iqs]);
+        q_sum.y += dotPacked4x8EXT(qs_a.y, cache_b.qs[iqs]);
     }
 
-    return mul_q8_1(q_sum, cache_a[ib_a].dm, cache_b.ds, 1);
+    return ACC_TYPE_VEC2(mul_q8_1(q_sum.x, cache_a[ib_a    ].dm, cache_b.ds, 1),
+                         mul_q8_1(q_sum.y, cache_a[ib_a + 1].dm, cache_b.ds, 1));
 }
 #endif // MMQ_SHMEM
 #endif
@@ -475,26 +514,33 @@ void block_a_to_registers(const uint reg_ib, const uint buf_ib) {
     }
 }
 
-ACC_TYPE mmq_dot_product(const uint ib_a) {
-    float result = 0.0;
-    int32_t q_sum = 0;
+ACC_TYPE_VEC2 mmq_dot_product(const uint ib_a) {
+    vec2 result = vec2(0.0);
+    i32vec2 q_sum = i32vec2(0);
 
     [[unroll]] for (uint iqs = 0; iqs < 4; iqs++) {
-        const int32_t qs_a = cache_a[ib_a].qs[iqs];
+        const i32vec2 qs_a = i32vec2(cache_a[ib_a    ].qs[iqs],
+                                     cache_a[ib_a + 1].qs[iqs]);
 
-        q_sum += dotPacked4x8EXT(qs_a, cache_b.qs[iqs]);
+        q_sum.x += dotPacked4x8EXT(qs_a.x, cache_b.qs[iqs]);
+        q_sum.y += dotPacked4x8EXT(qs_a.y, cache_b.qs[iqs]);
     }
-    result += float(cache_a[ib_a].d_scales[0]) * float(q_sum);
-    q_sum = 0;
+    result.x += float(cache_a[ib_a    ].d_scales[0]) * float(q_sum.x);
+    result.y += float(cache_a[ib_a + 1].d_scales[0]) * float(q_sum.y);
+    q_sum = i32vec2(0);
 
     [[unroll]] for (uint iqs = 4; iqs < 8; iqs++) {
-        const int32_t qs_a = cache_a[ib_a].qs[iqs];
+        const i32vec2 qs_a = i32vec2(cache_a[ib_a    ].qs[iqs],
+                                     cache_a[ib_a + 1].qs[iqs]);
 
-        q_sum += dotPacked4x8EXT(qs_a, cache_b.qs[iqs]);
+        q_sum.x += dotPacked4x8EXT(qs_a.x, cache_b.qs[iqs]);
+        q_sum.y += dotPacked4x8EXT(qs_a.y, cache_b.qs[iqs]);
     }
-    result += float(cache_a[ib_a].d_scales[1]) * float(q_sum);
+    result.x += float(cache_a[ib_a    ].d_scales[1]) * float(q_sum.x);
+    result.y += float(cache_a[ib_a + 1].d_scales[1]) * float(q_sum.y);
 
-    return ACC_TYPE(cache_b.ds.x * result);
+    return ACC_TYPE_VEC2(cache_b.ds.x * result.x,
+                         cache_b.ds.x * result.y);
 }
 #endif // MMQ_SHMEM
 #endif
