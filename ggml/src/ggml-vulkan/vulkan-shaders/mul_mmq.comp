@@ -87,7 +87,11 @@ layout (constant_id = 10) const uint WARP = 32;
 #endif
 
 // Shared memory cache
+#if defined(DATA_A_Q6_K) || defined(DATA_A_Q5_K) || defined(DATA_A_MXFP4)
+shared block_a_buff buf_a[BM * BK_STEP];
+#else
 shared block_a_cache buf_a[BM * BK_STEP];
+#endif
 shared block_b_cache buf_b[BN * BK_STEP];
 // Register cache
 block_a_cache cache_a[WMITER * TM];

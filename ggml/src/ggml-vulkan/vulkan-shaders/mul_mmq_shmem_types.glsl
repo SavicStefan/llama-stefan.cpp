@@ -35,6 +35,10 @@ struct block_a_cache {
 #elif defined(DATA_A_MXFP4)
 #define QUANT_R_MMQ 2
 struct block_a_cache {
+    i32vec2 qs[4];
+    FLOAT_TYPE d;
+};
+struct block_a_buff {
     int32_t qs[8];
     FLOAT_TYPE d;
 };
@@ -60,12 +64,20 @@ struct block_a_cache {
 #elif defined(DATA_A_Q5_K)
 #define QUANT_R_MMQ 1
 struct block_a_cache {
+    i32vec2 qs[4];
+    FLOAT_TYPE_VEC2 dm;
+};
+struct block_a_buff {
     int32_t qs[8];
     FLOAT_TYPE_VEC2 dm;
 };
 #elif defined(DATA_A_Q6_K)
 #define QUANT_R_MMQ 1
 struct block_a_cache {
+    i32vec2 qs[4];
+    FLOAT_TYPE_VEC2 d_scales;
+};
+struct block_a_buff {
     int32_t qs[8];
     FLOAT_TYPE_VEC2 d_scales;
 };
@@ -73,6 +85,10 @@ struct block_a_cache {
 
 struct block_b_cache
 {
+#if defined(DATA_A_Q6_K) || defined(DATA_A_Q5_K) || defined(DATA_A_MXFP4)
+    i32vec2 qs[4];
+#else
     int32_t qs[8];
+#endif
     FLOAT_TYPE_VEC2 ds;
 };
