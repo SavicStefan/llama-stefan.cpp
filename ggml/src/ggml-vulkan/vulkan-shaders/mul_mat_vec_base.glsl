@@ -2,10 +2,10 @@
 #extension GL_EXT_shader_16bit_storage : require
 #extension GL_EXT_shader_8bit_storage : require
 
-#if USE_SUBGROUP_ADD || USE_SUBGROUP_ADD_NO_SHMEM
+// #if USE_SUBGROUP_ADD || USE_SUBGROUP_ADD_NO_SHMEM
 #extension GL_KHR_shader_subgroup_basic : require
 #extension GL_KHR_shader_subgroup_arithmetic : require
-#endif
+// #endif
 
 #ifdef MUL_MAT_ID
 #define EXPERT_COUNT 8
