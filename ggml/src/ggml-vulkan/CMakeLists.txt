@@ -74,11 +74,11 @@ if (Vulkan_FOUND)
         "GGML_VULKAN_COOPMAT2_GLSLC_SUPPORT"
     )
 
-    test_shader_extension_support(
-        "GL_EXT_integer_dot_product"
-        "${CMAKE_CURRENT_SOURCE_DIR}/vulkan-shaders/feature-tests/integer_dot.comp"
-        "GGML_VULKAN_INTEGER_DOT_GLSLC_SUPPORT"
-    )
+    # test_shader_extension_support(
+    #     "GL_EXT_integer_dot_product"
+    #     "${CMAKE_CURRENT_SOURCE_DIR}/vulkan-shaders/feature-tests/integer_dot.comp"
+    #     "GGML_VULKAN_INTEGER_DOT_GLSLC_SUPPORT"
+    # )
 
     test_shader_extension_support(
         "GL_EXT_bfloat16"
